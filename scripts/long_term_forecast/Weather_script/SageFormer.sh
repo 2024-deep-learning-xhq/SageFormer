@@ -31,7 +31,7 @@ python -u run.py \
   --graph_depth $graph_depth \
   --knn $knn \
   --batch_size 16 \
-  --learning_rate 1e-4 \
+  --learning_rate 1e-5 \
   --lradj 'type3' \
   --des 'Exp' \
   --itr 1 \
@@ -60,7 +60,7 @@ python -u run.py \
   --graph_depth $graph_depth \
   --knn $knn \
   --batch_size 16 \
-  --learning_rate 1e-4 \
+  --learning_rate 1e-5 \
   --lradj 'type3' \
   --des 'Exp' \
   --itr 1 \
@@ -89,7 +89,7 @@ python -u run.py \
   --graph_depth $graph_depth \
   --knn $knn \
   --batch_size 16 \
-  --learning_rate 1e-4 \
+  --learning_rate 1e-5 \
   --lradj 'type3' \
   --des 'Exp' \
   --itr 1 \
@@ -118,7 +118,7 @@ python -u run.py \
   --graph_depth $graph_depth \
   --knn $knn \
   --batch_size 16 \
-  --learning_rate 1e-4 \
+  --learning_rate 1e-5 \
   --lradj 'type3' \
   --des 'Exp' \
   --itr 1 \

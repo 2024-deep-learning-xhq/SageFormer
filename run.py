@@ -9,8 +9,10 @@ from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
 import random
 import numpy as np
 
+torch.autograd.set_detect_anomaly(True)
+
 if __name__ == '__main__':
-    fix_seed = 2021
+    fix_seed = 2024
     random.seed(fix_seed)
     torch.manual_seed(fix_seed)
     np.random.seed(fix_seed)

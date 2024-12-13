@@ -1,12 +1,28 @@
 import os
 import torch
 from models import SageFormer
+from models import Autoformer
+from models import Informer
+from models import Reformer
+from models import Transformer
+from models import PatchTST
+from models import DLinear
+from models import NLinear
+from models import Linear
 
 class Exp_Basic(object):
     def __init__(self, args):
         self.args = args
         self.model_dict = {
             'SageFormer': SageFormer,
+            'Autoformer': Autoformer,
+            'Informer': Informer,
+            'Reformer': Reformer,
+            'Transformer': Transformer,
+            'PatchTST': PatchTST,
+            'DLinear': DLinear,
+            'NLinear': NLinear,
+            'Linear': Linear,
         }
         self.device = self._acquire_device()
         self.model = self._build_model().to(self.device)

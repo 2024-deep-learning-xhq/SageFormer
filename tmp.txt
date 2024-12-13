@@ -1,0 +1,8 @@
+    # sh scripts/long_term_forecast/Trade_script/SageFormer.sh
+    # sh scripts/long_term_forecast/Weather_script/SageFormer.sh
+    # sh scripts/long_term_forecast/Trade_script/SageFormer1.sh
+    # sh scripts/long_term_forecast/Trade_script/day.sh
+    # sh scripts/long_term_forecast/Trade_script/5min_fast.sh
+    # sh scripts/long_term_forecast/Trade_script/5min_slow.sh
+    
+    # sh scripts/long_term_forecast/Trade_script/PatchTST.sh

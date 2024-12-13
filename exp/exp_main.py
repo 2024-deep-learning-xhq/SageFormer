@@ -1,25 +1,39 @@
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
-from utils.tools import EarlyStopping, adjust_learning_rate, visual, register_metric
+from models import Informer, Autoformer, Transformer, DLinear, Linear, NLinear, PatchTST
+from utils.tools import EarlyStopping, adjust_learning_rate, visual, test_params_flop
 from utils.metrics import metric
+
+import numpy as np
 import torch
 import torch.nn as nn
 from torch import optim
+from torch.optim import lr_scheduler 
+
 import os
 import time
+
 import warnings
+import matplotlib.pyplot as plt
 import numpy as np
 
 warnings.filterwarnings('ignore')
 
-torch.autograd.set_detect_anomaly(True)
-
-class Exp_Long_Term_Forecast(Exp_Basic):
+class Exp_Main(Exp_Basic):
     def __init__(self, args):
-        super(Exp_Long_Term_Forecast, self).__init__(args)
+        super(Exp_Main, self).__init__(args)
 
     def _build_model(self):
-        model = self.model_dict[self.args.model].Model(self.args).float()
+        model_dict = {
+            'Autoformer': Autoformer,
+            'Transformer': Transformer,
+            'Informer': Informer,
+            'DLinear': DLinear,
+            'NLinear': NLinear,
+            'Linear': Linear,
+            'PatchTST': PatchTST,
+        }
+        model = model_dict[self.args.model].Model(self.args).float()
 
         if self.args.use_multi_gpu and self.args.use_gpu:
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
@@ -54,15 +68,21 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
+                        if 'Linear' in self.args.model or 'TST' in self.args.model:
+                            outputs = self.model(batch_x)
+                        else:
+                            if self.args.output_attention:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                else:
+                    if 'Linear' in self.args.model or 'TST' in self.args.model:
+                        outputs = self.model(batch_x)
+                    else:
                         if self.args.output_attention:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                else:
-                    if self.args.output_attention:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
-                    else:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 f_dim = -1 if self.args.features == 'MS' else 0
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
@@ -96,6 +116,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
+            
+        scheduler = lr_scheduler.OneCycleLR(optimizer = model_optim,
+                                            steps_per_epoch = train_steps,
+                                            pct_start = self.args.pct_start,
+                                            epochs = self.args.train_epochs,
+                                            max_lr = self.args.learning_rate)
 
         for epoch in range(self.args.train_epochs):
             iter_count = 0
@@ -119,10 +145,13 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
-                        if self.args.output_attention:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                        if 'Linear' in self.args.model or 'TST' in self.args.model:
+                            outputs = self.model(batch_x)
                         else:
-                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                            if self.args.output_attention:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
                         f_dim = -1 if self.args.features == 'MS' else 0
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
@@ -130,11 +159,15 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                         loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
                 else:
-                    if self.args.output_attention:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                    if 'Linear' in self.args.model or 'TST' in self.args.model:
+                            outputs = self.model(batch_x)
                     else:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-
+                        if self.args.output_attention:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark, batch_y)
+                    # print(outputs.shape,batch_y.shape)
                     f_dim = -1 if self.args.features == 'MS' else 0
                     outputs = outputs[:, -self.args.pred_len:, f_dim:]
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
@@ -156,6 +189,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 else:
                     loss.backward()
                     model_optim.step()
+                    
+                if self.args.lradj == 'TST':
+                    adjust_learning_rate(model_optim, epoch + 1, self.args)
+                    scheduler.step()
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
@@ -169,7 +206,10 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 print("Early stopping")
                 break
 
-            adjust_learning_rate(model_optim, epoch + 1, self.args)
+            if self.args.lradj != 'TST':
+                adjust_learning_rate(model_optim, epoch + 1, self.args)
+            else:
+                print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
 
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))
@@ -178,12 +218,14 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
+        
         if test:
             print('loading model')
             self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
 
         preds = []
         trues = []
+        inputx = []
         folder_path = './test_results/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
@@ -203,58 +245,123 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 # encoder - decoder
                 if self.args.use_amp:
                     with torch.cuda.amp.autocast():
+                        if 'Linear' in self.args.model or 'TST' in self.args.model:
+                            outputs = self.model(batch_x)
+                        else:
+                            if self.args.output_attention:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                else:
+                    if 'Linear' in self.args.model or 'TST' in self.args.model:
+                            outputs = self.model(batch_x)
+                    else:
                         if self.args.output_attention:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+
                         else:
                             outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                else:
-                    if self.args.output_attention:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
-
-                    else:
-                        outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
 
                 f_dim = -1 if self.args.features == 'MS' else 0
+                # print(outputs.shape,batch_y.shape)
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
 
-                pred = outputs
-                true = batch_y
+                pred = outputs  # outputs.detach().cpu().numpy()  # .squeeze()
+                true = batch_y  # batch_y.detach().cpu().numpy()  # .squeeze()
 
                 preds.append(pred)
                 trues.append(true)
+                inputx.append(batch_x.detach().cpu().numpy())
                 if i % 20 == 0:
                     input = batch_x.detach().cpu().numpy()
                     gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
                     pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
                     visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
 
+        if self.args.test_flop:
+            test_params_flop((batch_x.shape[1],batch_x.shape[2]))
+            exit()
         preds = np.array(preds)
         trues = np.array(trues)
-        print('test shape:', preds.shape, trues.shape)
+        inputx = np.array(inputx)
+
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
         trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
-        print('test shape:', preds.shape, trues.shape)
+        inputx = inputx.reshape(-1, inputx.shape[-2], inputx.shape[-1])
 
         # result save
         folder_path = './results/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
-        mae, mse, rmse, mape, mspe = metric(preds, trues)
-        # register_metric(mae, mse, self.args)
-        print('mse:{}, mae:{}'.format(mse, mae))
-        f = open("result_long_term_forecast.txt", 'a')
+        mae, mse, rmse, mape, mspe, rse, corr = metric(preds, trues)
+        print('mse:{}, mae:{}, rse:{}'.format(mse, mae, rse))
+        f = open("result.txt", 'a')
         f.write(setting + "  \n")
-        f.write('mse:{}, mae:{}'.format(mse, mae))
+        f.write('mse:{}, mae:{}, rse:{}'.format(mse, mae, rse))
         f.write('\n')
         f.write('\n')
         f.close()
 
-        np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
+        # np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe,rse, corr]))
         np.save(folder_path + 'pred.npy', preds)
-        np.save(folder_path + 'true.npy', trues)
+        # np.save(folder_path + 'true.npy', trues)
+        # np.save(folder_path + 'x.npy', inputx)
+        return
+
+    def predict(self, setting, load=False):
+        pred_data, pred_loader = self._get_data(flag='pred')
+
+        if load:
+            path = os.path.join(self.args.checkpoints, setting)
+            best_model_path = path + '/' + 'checkpoint.pth'
+            self.model.load_state_dict(torch.load(best_model_path))
+
+        preds = []
+
+        self.model.eval()
+        with torch.no_grad():
+            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(pred_loader):
+                batch_x = batch_x.float().to(self.device)
+                batch_y = batch_y.float()
+                batch_x_mark = batch_x_mark.float().to(self.device)
+                batch_y_mark = batch_y_mark.float().to(self.device)
+
+                # decoder input
+                dec_inp = torch.zeros([batch_y.shape[0], self.args.pred_len, batch_y.shape[2]]).float().to(batch_y.device)
+                dec_inp = torch.cat([batch_y[:, :self.args.label_len, :], dec_inp], dim=1).float().to(self.device)
+                # encoder - decoder
+                if self.args.use_amp:
+                    with torch.cuda.amp.autocast():
+                        if 'Linear' in self.args.model or 'TST' in self.args.model:
+                            outputs = self.model(batch_x)
+                        else:
+                            if self.args.output_attention:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                            else:
+                                outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                else:
+                    if 'Linear' in self.args.model or 'TST' in self.args.model:
+                        outputs = self.model(batch_x)
+                    else:
+                        if self.args.output_attention:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)[0]
+                        else:
+                            outputs = self.model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                pred = outputs.detach().cpu().numpy()  # .squeeze()
+                preds.append(pred)
+
+        preds = np.array(preds)
+        preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
+
+        # result save
+        folder_path = './results/' + setting + '/'
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+
+        np.save(folder_path + 'real_prediction.npy', preds)
 
         return
