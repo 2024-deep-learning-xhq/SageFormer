@@ -155,3 +155,5 @@ data_loader_all.py
 
 tmp/
 checkpoints/
+results/
+result.txt
