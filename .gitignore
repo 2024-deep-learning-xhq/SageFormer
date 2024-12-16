@@ -157,3 +157,4 @@ tmp/
 checkpoints/
 results/
 result.txt
+nohup.out
