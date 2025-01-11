@@ -1,3 +1,8 @@
+# This code is based on the research presented in the paper:
+# Wang, Yuxuan, et al. "Deep Time Series Models: A Comprehensive Survey and Benchmark."
+# arXiv preprint arXiv:2407.13278. 2024.
+# GitHub repository: https://github.com/thuml/Time-Series-Library
+# Main contributors: Yuxuan Wang, Haixu Wu, Jiaxiang Dong, Yong Liu, Mingsheng Long, Jianmin Wang
 import torch
 import torch.nn as nn
 from layers.Transformer_EncDec import Decoder, DecoderLayer, Encoder, EncoderLayer
