@@ -158,3 +158,6 @@ checkpoints/
 results/
 result.txt
 nohup.out
+
+*_result.eps
+*_result.png

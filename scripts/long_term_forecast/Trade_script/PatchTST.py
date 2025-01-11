@@ -7,9 +7,9 @@ def run_experiments():
     # 定义要搜索的超参数空间
     param_grid = {
         "pred_len": [96],
-        "n_heads": [8, 16],
-        "e_layers": [2, 3],
-        "d_model": [128, 256],
+        "n_heads": [4, 8, 16, 32],
+        "e_layers": [2],
+        "d_model": [32, 64, 128, 256],
     }
 
     # 基础配置
